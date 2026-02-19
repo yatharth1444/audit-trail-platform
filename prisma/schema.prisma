@@ -12,3 +12,98 @@ generator client {
 datasource db {
   provider = "postgresql"
 }
+// prisma/schema.prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id             String   @id @default(cuid())
+  name           String
+  apiKey         String   @unique
+  apiKeyPreview  String   // last 4 chars for UI
+  createdAt      DateTime @default(now())
+  lastUsed       DateTime?
+  
+  auditLogs      AuditLog[]
+  webhooks       Webhook[]
+
+  @@map("agents")
+}
+
+model AuditLog {
+  id             String   @id @default(cuid())
+  
+  // Core identity
+  agentId        String
+  agent          Agent    @relation(fields: [agentId], references: [id])
+  
+  sessionId      String   @unique @default(uuid())
+  timestamp      DateTime @default(now())
+  
+  // The cryptographic chain
+  previousHash   String   @default("GENESIS")
+  currentHash    String   @unique
+  chainPosition  Int
+  
+  // The actual decision (hashed, not raw)
+  inputHash      String   // SHA-256 of input
+  outputHash     String   // SHA-256 of output
+  confidence     Float?
+  
+  // Metadata for compliance [citation:5][citation:10]
+  modelVersion   String?  // Which AI model version
+  environment    String?  // prod/staging/dev
+  duration       Int?     // Processing time in ms
+  
+  // Audit context [citation:6]
+  ipAddress      String?  // Source IP
+  userAgent      String?  // Client info
+  
+  // For future blockchain anchoring
+  merkleRoot     String?
+  merkleProof    Json?
+  
+  // Retention
+  expiresAt      DateTime? // For GDPR compliance
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([agentId, chainPosition])
+  @@index([agentId, timestamp])
+  @@index([currentHash])
+  @@index([expiresAt]) // For cleanup jobs
+  @@map("audit_logs")
+}
+
+model Webhook {
+  id             String   @id @default(cuid())
+  agentId        String
+  agent          Agent    @relation(fields: [agentId], references: [id])
+  url            String
+  events         String[] // "log.created", "chain.broken"
+  secret         String   // For signing webhooks
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  
+  @@map("webhooks")
+}
+
+model ApiKey {
+  id             String   @id @default(cuid())
+  key            String   @unique
+  agentId        String
+  agent          Agent    @relation(fields: [agentId], references: [id])
+  name           String   // "Production", "Development"
+  lastUsed       DateTime?
+  expiresAt      DateTime?
+  createdAt      DateTime @default(now())
+  
+  @@map("api_keys")
+}
